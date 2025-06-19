@@ -6,3 +6,13 @@ This project is a [fork](https://github.com/CarloRuheAlfa/secureprogramminglesso
 - Fixed docker-compose for non ARM64 devices
 - No PHPMyAdmin
 - Different port for the webserver
+
+## Security Enhancements (19/06/25)
+- Add SQL injection prevention with prepared statements
+- Implement password hashing and complexity validation  
+- Add CSRF protection with token validation
+- Implement XSS prevention with output escaping
+- Add input sanitization and validation
+- Harden session security settings
+- Add proper authorization controls
+- Implement atomic database transactions
