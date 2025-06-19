@@ -15,6 +15,8 @@ services:
       MYSQL_DATABASE: mydb
       MYSQL_USER: user
       MYSQL_PASSWORD: test
+    ports:
+      - "3306:3306" # expose to localhost
     volumes:
       - dbdata:/var/lib/mysql
   # phpmyadmin:

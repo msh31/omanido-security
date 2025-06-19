@@ -1,68 +1,80 @@
 <?php
 session_start();
 include 'includes/db.php';
+include 'includes/csrf.php';
+include 'includes/sanitize.php';
 
 if(!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true){
     header("location: index.php");
     exit;
 }
 
+$stmt = $pdo->prepare("SELECT balance FROM user WHERE id = ?");
+$stmt->execute([$_SESSION['user_id']]);
+$current_balance = $stmt->fetchColumn();
+
 // als button is ingedrukt
 if($_SERVER["REQUEST_METHOD"] == "POST"){
-    $ontvanger = $_POST['ontvanger'];
-    $bedrag = $_POST['bedrag'];
-
-    // Controleer of de ontvanger bestaat
-    $stmt = $pdo->prepare("SELECT * FROM user WHERE username = ?");
-    $stmt->execute([$ontvanger]);
-    $ontvanger = $stmt->fetch();
-
-    if($stmt->rowCount() == 1) {
-        // Controleer of de gebruiker genoeg saldo heeft
-        if($_SESSION['user']['balance'] >= $bedrag) {
-            // Zet de transactie in de database
-            $stmt = $pdo->prepare("INSERT INTO transaction (sender, receiver, amount, description) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$_SESSION['user']['id'], $ontvanger['id'], $bedrag, $_POST['omschrijving']]);
-
-            // Haal het saldo van de ontvanger op
-            $stmt = $pdo->prepare("SELECT balance FROM user WHERE username = ?");
-            $stmt->execute([$ontvanger['username']]);
-            $saldo = $stmt->fetchColumn();
-
-            // Bereken het nieuwe saldo van de ontvanger
-            $saldo = $saldo + $bedrag;
-
-            // Update het saldo van de ontvanger
-            $stmt = $pdo->prepare("UPDATE user SET balance = ? WHERE username = ?");
-            $stmt->execute([$saldo, $ontvanger['username']]);
-
-            // Bereken het nieuwe saldo van de ingelogde gebruiker
-            $stmt = $pdo->prepare("SELECT balance FROM user WHERE id = ?");
-            $stmt->execute([$_SESSION['user']['id']]);
-
-           //Bereken het nieuwe saldo van de ingelogde gebruiker
-            $saldo = $stmt->fetchColumn();
-            $saldo = $saldo - $bedrag;
-
-            // Update het saldo van de ingelogde gebruiker
-            $stmt = $pdo->prepare("UPDATE user SET balance = ? WHERE id = ?");
-            $stmt->execute([$saldo, $_SESSION['user']['id']]);
-
-            $success = "Het bedrag is succesvol overgemaakt";
-        } else {
-            $error = "Je hebt niet genoeg saldo om dit bedrag over te maken";
-        }
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = "Ongeldig verzoek. Probeer opnieuw.";
     } else {
-        $error = "Deze gebruiker bestaat niet";
-    }
+        $ontvanger = sanitizeUsername($_POST['ontvanger'] ?? '');
+        $bedrag = sanitizeAmount($_POST['bedrag'] ?? '');
+        $omschrijving = sanitizeDescription($_POST['omschrijving'] ?? '');
+        
+        // Validate sanitized inputs
+        if ($ontvanger === false) {
+            $error = "Ongeldige ontvanger. Alleen letters, cijfers en underscores toegestaan.";
+        } elseif ($bedrag === false) {
+            $error = "Ongeldig bedrag. Voer een positief bedrag in (max €100.000).";
+        } elseif ($omschrijving === false) {
+            $error = "Ongeldige omschrijving. Alleen letters, cijfers en basale leestekens toegestaan.";
+        } elseif (empty($ontvanger) || empty($omschrijving)) {
+            $error = "Alle velden zijn verplicht.";
+        } else {
+            $stmt = $pdo->prepare("SELECT * FROM user WHERE username = ?");
+            $stmt->execute([$ontvanger]);
+            $receiver = $stmt->fetch();
 
+             if($stmt->rowCount() == 1) {
+                 if($current_balance >= $bedrag) {
+                     try {
+                        $pdo->beginTransaction();
+
+                        $stmt = $pdo->prepare("INSERT INTO transaction (sender,     receiver, amount, description) VALUES (?, ?, ?, ?)");
+                        $stmt->execute([$_SESSION['user_id'], $receiver['id'], $bedrag, $omschrijving]);
+
+                        $stmt = $pdo->prepare("UPDATE user SET balance = balance + ? WHERE id = ?");
+                        $stmt->execute([$bedrag, $receiver['id']]);
+
+                        $stmt = $pdo->prepare("UPDATE user SET balance = balance - ? WHERE id = ?");
+                        $stmt->execute([$bedrag, $_SESSION['user_id']]);
+
+                        $pdo->commit();
+                        $success = "Het bedrag is succesvol overgemaakt naar " . htmlspecialchars($ontvanger) . ".";
+
+                        $stmt = $pdo->prepare("SELECT balance FROM user WHERE id = ?");
+                        $stmt->execute([$_SESSION['user_id']]);
+                        $current_balance = $stmt->fetchColumn();
+                    } catch (Exception $e) {
+                        $pdo->rollback();
+                        $error = "Er is een fout opgetreden bij de transactie. Probeer het opnieuw.";
+                    }
+                } else {
+                    $error = "Je hebt niet genoeg saldo om dit bedrag over te maken.";
+                }
+             } else {
+                $error = "Deze gebruiker bestaat niet.";
+            }
+        }
+    }
 }
 
 include 'includes/db.php';
 
 // Haal het saldo van de ingelogde gebruiker op
 $stmt = $pdo->prepare("SELECT balance FROM user WHERE id = ?");
-$stmt->execute([$_SESSION['user']['id']]);
+$stmt->execute([$_SESSION['user_id']]);
 $saldo = $stmt->fetchColumn();
 ?>
 
@@ -91,7 +103,7 @@ $saldo = $stmt->fetchColumn();
                         €<?php echo number_format($saldo, 2, ',', '.'); ?>
                     </p>
                     <div class="text-center">
-                        <a href="transacties.php?id=<?= $_SESSION['user']['id'] ?>" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
+                        <a href="transacties.php?id=<?= $_SESSION['user_id'] ?>" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">
                             Transactieoverzicht
                         </a>
                     </div>
@@ -104,6 +116,8 @@ $saldo = $stmt->fetchColumn();
                 <div class="bg-white p-6 rounded-lg shadow-md h-full"> <!-- Verhoogde padding van p-4 naar p-6 -->
                     <h3 class="font-bold text-xl mb-4">Geld Overmaken</h3>
                     <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]) ?>" method="post">
+                        <?= getCSRFField() ?>
+
                         <div class="mb-4">
                             <label for="ontvanger" class="block text-sm font-medium text-gray-700">Ontvanger:</label>
                             <input type="text" id="ontvanger" name="ontvanger" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
@@ -117,14 +131,13 @@ $saldo = $stmt->fetchColumn();
                             <input type="text" id="omschrijving" name="omschrijving" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3">
                         </div>
                         <input type="submit" value="Overmaken" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 focus:outline-none focus:shadow-outline">
-                        <?php
-                            if(isset($error)) {
-                                echo '<p class="text-red-500 text-sm mt-2">' . $error . '</p>';
-                            }
-                            if(isset($success)) {
-                                echo '<p class="text-green-500 text-sm mt-2">' . $success . '</p>';
-                            }
-                        ?>
+                        <?php if(isset($error)): ?>
+                            <p class="text-red-500 text-sm mt-2"><?= htmlspecialchars($error) ?></p>
+                        <?php endif; ?>
+                        
+                        <?php if(isset($success)): ?>
+                            <p class="text-green-500 text-sm mt-2"><?= htmlspecialchars($success) ?></p>
+                        <?php endif; ?>
                     </form>
                 </div>
             </div>

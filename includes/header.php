@@ -1,8 +1,8 @@
 <?php
 // Controleer of de gebruiker is ingelogd
 if (isset($_SESSION['loggedin'])) {
-    $username = $_SESSION['user']['username'];
-    $userId = $_SESSION['user']['id'];
+    $username = $_SESSION['username'];
+    $userId = $_SESSION['user_id'];
 }
 ?>
 

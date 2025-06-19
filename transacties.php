@@ -9,6 +9,11 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 
 $id = $_GET['id'];
 
+if ($id != $_SESSION['user_id']) {
+    header("location: dashboard.php");
+    exit;
+}
+
 // Gebruikersgegevens ophalen
 $stmt = $pdo->prepare("SELECT * FROM user WHERE id = ?");
 $stmt->execute([$id]);
@@ -59,7 +64,7 @@ $incomingTransactions = $stmt->fetchAll();
             <div class="bg-red-100 p-2 rounded">
                 <?php foreach ($outgoingTransactions as $transaction): ?>
                     <div class="flex justify-between mb-2">
-                        <p><?= $transaction['description'] ?></p>
+                        <p><?= htmlspecialchars($transaction['description']) ?></p>
                         <p>€<?= number_format($transaction['amount'], 2, ',', '.') ?></p>
                     </div>
                 <?php endforeach; ?>
@@ -75,7 +80,7 @@ $incomingTransactions = $stmt->fetchAll();
                 <div class="bg-green-100 p-2 rounded">
                     <?php foreach ($incomingTransactions as $transaction): ?>
                         <div class="flex justify-between mb-2">
-                            <p><?= $transaction['description'] ?></p>
+                            <p><?= htmlspecialchars($transaction['description']) ?></p>
                             <p>€<?= number_format($transaction['amount'], 2, ',', '.') ?></p>
                         </div>
                     <?php endforeach; ?>
