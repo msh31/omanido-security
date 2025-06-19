@@ -1,5 +1,5 @@
 # Educational web application for web security
-This project is a [fork](https://github.com/CarloRuheAlfa/secureprogramminglessons) of the teacher's repo with the completed assignments for Group A.
+This project is a [fork](https://github.com/CarloRuheAlfa/secureprogramminglessons) of the teacher's repo with the completed assignments for Group A & B.
 
 
 ## Core Changes (10-6-25)
